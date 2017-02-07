@@ -4,7 +4,8 @@ import * as firebase from 'firebase'
 
 import App from './App';
 
-import 'bulma/css/bulma.css'
+import 'bulma/css/bulma.css';
+import '../src/fill-screen.css';
 
 // Make sure you swap this out with your Firebase app's config
 const config = {

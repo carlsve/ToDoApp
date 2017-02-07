@@ -1,15 +1,20 @@
 import React, { Component } from 'react';
 import * as firebase from 'firebase';
 
-
 class App extends Component {
     constructor(props) {
         super(props);
 
+        let user = firebase.auth().currentUser;
+
+        console.log(!!user);
+
         this.state = {
             items: [],
-            filterItems: "SHOWUNFINISHEDONLY",
-            loadingFinished: false
+            filteringSelection: "SHOWUNFINISHEDONLY",
+            userNotLoggedInShowSignUpOrSignInTab: "SHOWSIGNINCOMPONENT",
+            loadingFinished: false,
+            isLoggedIn: !!user
         };
 
         //This might have to be used, not sure...
@@ -17,66 +22,290 @@ class App extends Component {
         this.removeItem = this.removeItem.bind(this);
         this.completeItem = this.completeItem.bind(this);
         this.filterItems = this.filterItems.bind(this);
+        this.signInOrSignUpTabHandler = this.signInOrSignUpTabHandler.bind(this);
+        this.signUp = this.signUp.bind(this);
+        this.signIn = this.signIn.bind(this);
+        this.signOut = this.signOut.bind(this);
     }
 
     componentDidMount() {
         console.log("App successfully loaded.");
-        const rootRef = firebase.database().ref().child('todolist/items');
 
-        rootRef.on('value', snap => {
-            let tempItems = [];
+        firebase.auth().onAuthStateChanged(user => {
+            if (user) {
+                this.setState({
+                    isLoggedIn: true
+                });
 
-            snap.forEach(item => {
-                tempItems.push(item.val());
-                tempItems[tempItems.length - 1].firebasekey = item.key;
-            });
-            tempItems.reverse();
+                const rootRef = firebase.database().ref().child('todolist/' + user.uid);
 
-            this.setState({ items: tempItems, loadingFinished: true });
+                rootRef.on('value', snap => {
+                    let tempItems = [];
+
+                    snap.forEach(item => {
+                        tempItems.push(item.val());
+                        tempItems[tempItems.length - 1].firebasekey = item.key;
+                    });
+                    tempItems.reverse();
+
+                    this.setState({ items: tempItems, loadingFinished: true });
+                });
+            }
         });
+
+
     }
 
     addItem(item) {
-        firebase.database().ref('todolist/items').push(item);
+        let userid = firebase.auth().currentUser.uid;
+        firebase.database().ref('todolist/' + userid).push(item);
     }
 
     removeItem(item) {
-        firebase.database().ref('todolist/items/' + item.firebasekey).remove();
+        let userid = firebase.auth().currentUser.uid;
+        firebase.database().ref('todolist/' + userid + '/' + item.firebasekey).remove();
     }
 
     completeItem(item) {
+        let userid = firebase.auth().currentUser.uid;
 
         item.completed = !item.completed;
-        firebase.database().ref('todolist/items/' + item.firebasekey).update(item);
+        firebase.database().ref('todolist/' + userid + '/' + item.firebasekey).update(item);
     }
 
     filterItems(status) {
-        this.setState({ filterItems: status });
+        this.setState({ filteringSelection: status });
+    }
+
+    signInOrSignUpTabHandler(status) {
+        this.setState({ userNotLoggedInShowSignUpOrSignInTab: status });
+    }
+
+    signIn(signInItem) {
+
+        firebase.auth().signInWithEmailAndPassword(signInItem.email, signInItem.password).catch((error) => {
+            console.log(error);
+        });
+    }
+
+    signUp(signUpItem) {
+        console.log(signUpItem);
+        firebase.auth().createUserWithEmailAndPassword(signUpItem.email, signUpItem.password).then(result => {
+            this.signIn(signUpItem);
+        }).catch((error) => {
+            console.log(error);
+        });
+    }
+
+    signOut() {
+
+        firebase.auth().signOut().then(() => {
+            console.log("success!");
+            this.setState({
+                isLoggedIn: false
+            });
+        }, (error) => {
+            console.log(error);
+        });
+
     }
 
     render() {
         return (
-            <div className="container">
-                <div className="box">
-                    <div className="logo">
-                        <a className="title is-1" href="#">To Do List</a>
-                    </div>
-                    <AddItemForm addItem={this.addItem} />
-                    <FilterItemButton filterItems={this.filterItems} filteringSelection={this.state.filterItems} />
-                    {this.state.loadingFinished ?
-                    <ItemList removeItem={this.removeItem} completeItem={this.completeItem} items={this.state.items} filterItems={this.state.filterItems} />
-                        : <div className="section">
-                            <p className="title is-2">Loading content... <a className="button is-primary is-loading">Loading</a></p>
-                        </div> }
-                </div>
+            <div className="body">
+                <NavBarComponent signOut={this.signOut} isLoggedIn={this.state.isLoggedIn} />
+                {this.state.isLoggedIn ? <UserLoggedInApp addItem={this.addItem}
+                                                          filterItems={this.filterItems}
+                                                          filteringSelection={this.state.filteringSelection}
+                                                          removeItem={this.removeItem}
+                                                          completeItem={this.completeItem}
+                                                          items={this.state.items}
+                                                          loadingFinished={this.state.loadingFinished} />
+
+                    : <UserNotLoggedInApp signUp={this.signUp}
+                                          signIn={this.signIn}
+                                          userNotLoggedInShowSignUpOrSignInTab={this.state.userNotLoggedInShowSignUpOrSignInTab}
+                                          signInOrSignUpTabHandler={this.signInOrSignUpTabHandler} />}
                 <FooterComponent />
             </div>
         );
     }
 }
 
-class FooterComponent extends Component {
+class SignInComponent extends Component {
+
+    constructor(props) {
+        super(props);
+
+        this.signIn = this.signIn.bind(this);
+    }
+
+    signIn(e) {
+        e.preventDefault();
+
+        let signInItem = {
+            email: this.refs.email.value,
+            password: this.refs.password.value
+        };
+
+        if (typeof signInItem.email === 'string' && signInItem.email.length > 0) {
+
+            this.refs.signInForm.reset();
+
+            this.props.signIn({
+                email: signInItem.email,
+                password: signInItem.password
+            });
+        }
+    }
+
     render() {
+        return(
+            <div className="container box">
+                <h1 className="title">Sign in!</h1>
+                <form ref="signInForm" onSubmit={this.signIn}>
+                    <p className="control is-expanded">
+                        <input className="input" type="text" ref="email" placeholder="email" />
+                    </p>
+                    <p className="control is-expanded">
+                        <input className="input" type="password" ref="password" placeholder="password" />
+                    </p>
+                    <p className="control">
+                        <button className="button is-primary" type="submit">Sign in</button>
+                    </p>
+                </form>
+            </div>
+        );
+    }
+}
+
+class SignUpComponent extends Component {
+
+    constructor(props) {
+        super(props);
+
+        this.signUp = this.signUp.bind(this);
+    }
+
+    signUp(e) {
+        e.preventDefault();
+
+        let signUpItem = {
+            email: this.refs.email.value,
+            password: this.refs.password.value,
+            confirmPassword: this.refs.passwordConfirm.value
+        };
+
+        if(typeof signUpItem.email === 'string' && signUpItem.email.length > 0) {
+
+            this.refs.signUpForm.reset();
+
+            if (signUpItem.confirmPassword === signUpItem.password) {
+                this.props.signUp({
+                    email: signUpItem.email,
+                    password: signUpItem.password
+                });
+            }
+        }
+    }
+
+    render() {
+        return(
+            <div className="container box">
+                <h1 className="title">Sign up!</h1>
+                <form ref="signUpForm" onSubmit={this.signUp}>
+                    <p className="control is-expanded">
+                        <input className="input" type="text" ref="email" placeholder="email" />
+                    </p>
+                    <p className="control is-expanded">
+                        <input className="input" type="password" ref="password" placeholder="password" />
+                    </p>
+                    <p className="control is-expanded">
+                        <input className="input" type="password" ref="passwordConfirm" placeholder="confirm password" />
+                    </p>
+                    <p className="control">
+                        <button className="button is-primary" type="submit">Sign up</button>
+                    </p>
+                </form>
+            </div>
+        );
+    }
+}
+
+
+class UserNotLoggedInApp extends Component {
+    render() {
+        return (
+            <div className="section">
+                <div className="container box">
+                    <p className="has-text-centered">You are currently not logged in</p>
+                    <div className="tabs is-centered">
+                        <ul>
+                            <li className={this.props.userNotLoggedInShowSignUpOrSignInTab === "SHOWSIGNINCOMPONENT" ? "is-active" : ""}>
+                                <a onClick={() => this.props.signInOrSignUpTabHandler("SHOWSIGNINCOMPONENT")}>Sign in</a></li>
+                            <li className={this.props.userNotLoggedInShowSignUpOrSignInTab === "SHOWSIGNUPCOMPONENT" ? "is-active" : ""}>
+                                <a onClick={() => this.props.signInOrSignUpTabHandler("SHOWSIGNUPCOMPONENT")}>Sign up</a></li>
+                        </ul>
+                    </div>
+                    {this.props.userNotLoggedInShowSignUpOrSignInTab === "SHOWSIGNUPCOMPONENT" ? <SignUpComponent signUp={this.props.signUp} /> : <SignInComponent signIn={this.props.signIn} />}
+                </div>
+            </div>
+        )
+    }
+}
+
+class UserLoggedInApp extends Component {
+    render() {
+        return (
+            <div className="section">
+                <div className="container">
+                    <div className="logo">
+                        <a className="title is-1" href="#">To Do List</a>
+                    </div>
+                    <AddItemForm addItem={this.props.addItem} />
+                    <FilterItemButton filterItems={this.props.filterItems} filteringSelection={this.props.filteringSelection} />
+                    {this.props.loadingFinished ?
+                        <ItemList removeItem={this.props.removeItem} completeItem={this.props.completeItem} items={this.props.items} filteringSelection={this.props.filteringSelection} />
+                        : <div className="section">
+                            <p className="title is-2">Loading content... <a className="button is-primary is-loading">Loading</a></p>
+                        </div> }
+                </div>
+
+            </div>
+        );
+    }
+}
+
+class NavBarComponent extends Component {
+
+    render() {
+        return (
+            <nav className="nav has-shadow">
+                <div className="container">
+                    <div className="nav-left">
+                        <a className="nav-item">
+                            <img src="http://bulma.io/images/bulma-logo.png" alt="Bulma logo" />
+                        </a>
+                        <a className="nav-item is-tab is-hidden-mobile is-active">Home</a>
+                        <a className="nav-item is-tab is-hidden-mobile">Contact</a>
+                    </div>
+                    <span className="nav-toggle"></span>
+                    <div className="nav-right nav-menu">
+                        <a className="nav-item is-tab is-hidden-tablet is-active">Home</a>
+                        <a className="nav-item is-tab is-hidden-tablet">Contact</a>
+                        {this.props.isLoggedIn ? <a onClick={this.props.signOut} className="nav-item is-tab">Sign out</a>
+                            : ""}
+                    </div>
+                </div>
+            </nav>
+        );
+    }
+}
+
+class FooterComponent extends Component {
+
+    render() {
+
         return (
             <footer className="footer">
                 <div className="container">
@@ -94,30 +323,14 @@ class FooterComponent extends Component {
 }
 
 class FilterItemButton extends Component {
-    constructor(props) {
-        super(props);
-
-        this.state = {
-            filteringSelection: this.props.filteringSelection
-        };
-
-        console.log(this.state.filteringSelection);
-
-        this.handleFilterItemsCheckBox = this.handleFilterItemsCheckBox.bind(this);
-    }
-
-    handleFilterItemsCheckBox(status) {
-        this.props.filterItems(status);
-        this.setState({ filteringSelection: status })
-    }
 
     render() {
         return (
             <div className="tabs is-centered">
                 <ul>
-                    <li className={this.state.filteringSelection === "SHOWUNFINISHEDONLY" ? "is-active" : ""}><a onClick={() => this.handleFilterItemsCheckBox("SHOWUNFINISHEDONLY")}>Show unfinished only</a></li>
-                    <li className={this.state.filteringSelection === "SHOWFINISHEDONLY" ? "is-active" : ""}><a onClick={() => this.handleFilterItemsCheckBox("SHOWFINISHEDONLY")}>Show finished only</a></li>
-                    <li className={this.state.filteringSelection === "SHOWALL" ? "is-active" : ""}><a onClick={() => this.handleFilterItemsCheckBox("SHOWALL")}>Show all</a></li>
+                    <li className={this.props.filteringSelection === "SHOWUNFINISHEDONLY" ? "is-active" : ""}><a onClick={() => this.props.filterItems("SHOWUNFINISHEDONLY")}>Show unfinished only</a></li>
+                    <li className={this.props.filteringSelection === "SHOWFINISHEDONLY" ? "is-active" : ""}><a onClick={() => this.props.filterItems("SHOWFINISHEDONLY")}>Show finished only</a></li>
+                    <li className={this.props.filteringSelection === "SHOWALL" ? "is-active" : ""}><a onClick={() => this.props.filterItems("SHOWALL")}>Show all</a></li>
                 </ul>
             </div>
         );
@@ -153,12 +366,12 @@ class ItemList extends Component {
             <div className="section">
                 <div className="status-list">
                     <ul>
-                        {   this.props.filterItems === 'SHOWUNFINISHEDONLY' ? this.props.items.filter(item => !item.completed).map(item => {
+                        {   this.props.filteringSelection === 'SHOWUNFINISHEDONLY' ? this.props.items.filter(item => !item.completed).map(item => {
                                 return <Item removeItem={this.props.removeItem} completeItem={this.props.completeItem} key={item.firebasekey} item={item} /> })
-                            : this.props.filterItems === 'SHOWFINISHEDONLY' ? this.props.items.filter(item => item.completed).map(item => {
-                                return <Item removeItem={this.props.removeItem} completeItem={this.props.completeItem} key={item.firebasekey} item={item} />})
-                                    : this.props.items.map(item => {
-                                        return <Item removeItem={this.props.removeItem} completeItem={this.props.completeItem} key={item.firebasekey} item={item} />})
+                            : this.props.filteringSelection === 'SHOWFINISHEDONLY' ? this.props.items.filter(item => item.completed).map(item => {
+                                    return <Item removeItem={this.props.removeItem} completeItem={this.props.completeItem} key={item.firebasekey} item={item} />})
+                                : this.props.items.map(item => {
+                                    return <Item removeItem={this.props.removeItem} completeItem={this.props.completeItem} key={item.firebasekey} item={item} />})
                         }
                     </ul>
                 </div>
